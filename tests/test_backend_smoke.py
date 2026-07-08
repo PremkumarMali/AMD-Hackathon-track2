@@ -22,6 +22,11 @@ import os
 import sys
 import tempfile
 
+# Force offline mock mode BEFORE importing the app: this test must never call
+# Fireworks or spend credits, even if a local .env sets USE_FIREWORKS=1.
+# (python-dotenv's load_dotenv does not override an already-set variable.)
+os.environ["USE_FIREWORKS"] = "0"
+
 # Make the project root importable no matter where this test is launched from.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
