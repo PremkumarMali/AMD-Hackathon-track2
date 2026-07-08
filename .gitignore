@@ -6,3 +6,8 @@ __pycache__/
 
 # Extracted key frames (generated at runtime)
 frames/
+
+# Local environment / secrets — never commit real values
+.env
+.env.*
+!.env.example
