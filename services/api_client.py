@@ -29,7 +29,12 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from src.caption_generator import generate_mock_captions
-from src.fireworks_client import generate_fireworks_captions
+from src.fireworks_client import (
+    DEFAULT_MODEL,
+    DEFAULT_TEXT_MODEL,
+    generate_fireworks_captions,
+)
+from src.firebase_client import is_firebase_enabled, save_caption_run
 from src.frame_extractor import extract_key_frames
 from src.video_utils import build_video_context
 
@@ -61,8 +66,11 @@ def generate_captions(video_bytes: bytes, filename: str) -> dict[str, str]:
 
         frame_paths = extract_key_frames(tmp.name)
         context = build_video_context(tmp.name, frame_paths, original_name=filename)
-        captions = _caption_from_context(context, frame_paths)
+        captions, mode = _caption_from_context(context, frame_paths)
         _CAPTION_CACHE[cache_key] = captions
+        # Best-effort history write (Firestore). No-op unless Firebase is
+        # enabled and configured; never raises, so it cannot break captioning.
+        _save_run_history(filename, video_bytes, mode, captions)
         return captions
     finally:
         try:
@@ -71,8 +79,15 @@ def generate_captions(video_bytes: bytes, filename: str) -> dict[str, str]:
             pass
 
 
-def _caption_from_context(context: dict, frame_paths: list[str]) -> dict[str, str]:
-    """Fireworks when enabled + configured; otherwise (or on failure) mock."""
+def _caption_from_context(
+    context: dict, frame_paths: list[str]
+) -> tuple[dict[str, str], str]:
+    """Fireworks when enabled + configured; otherwise (or on failure) mock.
+
+    Returns ``(captions, mode)`` where ``mode`` is ``"fireworks"`` or ``"mock"``
+    so the caller can record which engine actually produced the captions. The
+    caption generation itself is unchanged.
+    """
     if _fireworks_enabled():
         api_key = os.environ.get("FIREWORKS_API_KEY", "").strip()
         model = os.environ.get("FIREWORKS_MODEL", "").strip() or None
@@ -85,13 +100,51 @@ def _caption_from_context(context: dict, frame_paths: list[str]) -> dict[str, st
                     context, frame_paths, api_key, model
                 )
                 _log("success -> using Fireworks captions")
-                return captions
+                return captions, "fireworks"
             except Exception as exc:  # noqa: BLE001 - any failure degrades to mock
                 # The message from src.fireworks_client never contains the key.
                 _log(f"failed ({type(exc).__name__}): {exc} -> falling back to mock")
         else:
             _log("no API key -> falling back to mock")
-    return generate_mock_captions(context)
+    return generate_mock_captions(context), "mock"
+
+
+def _save_run_history(
+    filename: str, video_bytes: bytes, mode: str, captions: dict[str, str]
+) -> None:
+    """Persist this caption run to Firestore (best-effort; never raises).
+
+    Does nothing unless Firebase is enabled and configured. The models are only
+    reported for the ``fireworks`` mode (mock captions use no model).
+    """
+    try:
+        if not is_firebase_enabled():
+            return
+        fireworks = mode == "fireworks"
+        record = {
+            "filename": filename or "",
+            "file_size_mb": round(len(video_bytes) / (1024 * 1024), 3),
+            "generation_mode": mode,
+            "vision_model": (
+                (os.environ.get("FIREWORKS_MODEL", "").strip() or DEFAULT_MODEL)
+                if fireworks
+                else None
+            ),
+            "text_model": (
+                (os.environ.get("FIREWORKS_TEXT_MODEL", "").strip() or DEFAULT_TEXT_MODEL)
+                if fireworks
+                else None
+            ),
+            "captions": {
+                "formal": captions.get("formal", ""),
+                "sarcastic": captions.get("sarcastic", ""),
+                "humorous_tech": captions.get("humorous_tech", ""),
+                "humorous_non_tech": captions.get("humorous_non_tech", ""),
+            },
+        }
+        save_caption_run(record)
+    except Exception as exc:  # noqa: BLE001 - history must never break captioning
+        _log(f"history save skipped ({type(exc).__name__})")
 
 
 def _log(message: str) -> None:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 
 import streamlit.components.v1 as components
 
@@ -31,6 +32,71 @@ def can_inline(size_bytes: int) -> bool:
     return size_bytes <= MAX_INLINE_MB * 1024 * 1024
 
 
+def split_caption_for_display(
+    caption_text: str, min_words: int = 6, max_words: int = 12
+) -> list[str]:
+    """Split a full caption into readable on-screen chunks.
+
+    Chunks are sentence- and phrase-sized (roughly ``min_words``–``max_words``
+    words), broken at sentence ends and punctuation so the video overlay shows
+    readable phrases rather than single words. Any 1–2 word fragment is merged
+    into its neighbour, so a cue is never a lone word (unless the whole caption
+    is that short). The full caption is left untouched everywhere else (e.g. the
+    download), so this only affects how captions are *displayed* over the video.
+
+    Returns a list of chunk strings; the client-side player spreads them across
+    the clip's duration (each shown for a readable minimum time).
+    """
+    text = " ".join((caption_text or "").split())  # normalise whitespace
+    if not text:
+        return []
+    chunks: list[str] = []
+    for sentence in _split_sentences(text):
+        chunks.extend(_split_long_phrase(sentence, min_words, max_words))
+    return _merge_tiny(chunks)
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Split into sentences, keeping terminal punctuation with each."""
+    parts = re.findall(r"[^.!?]+[.!?]*", text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _split_long_phrase(sentence: str, min_words: int, max_words: int) -> list[str]:
+    """Break a long sentence at natural boundaries (commas etc.) into chunks."""
+    words = sentence.split()
+    if len(words) <= max_words:
+        return [sentence]
+    chunks: list[str] = []
+    cur: list[str] = []
+    for w in words:
+        cur.append(w)
+        at_boundary = bool(re.search(r"[,;:—–-]$", w))
+        if (at_boundary and len(cur) >= min_words) or len(cur) >= max_words:
+            chunks.append(" ".join(cur))
+            cur = []
+    if cur:
+        chunks.append(" ".join(cur))
+    return chunks
+
+
+def _merge_tiny(chunks: list[str], tiny: int = 3) -> list[str]:
+    """Fold 1–2 word chunks into a neighbour so no cue is a lone fragment."""
+    if len(chunks) <= 1:
+        return chunks
+    out: list[str] = []
+    for ch in chunks:
+        if out and len(ch.split()) < tiny:
+            out[-1] = out[-1] + " " + ch
+        else:
+            out.append(ch)
+    # If the first chunk was tiny it stayed alone — fold it into the next.
+    if len(out) > 1 and len(out[0].split()) < tiny:
+        out[1] = out[0] + " " + out[1]
+        out = out[1:]
+    return out
+
+
 # Raw string: the template contains JS regex escapes (e.g. /\s+/) that must
 # reach the browser verbatim, not be interpreted as Python escapes.
 _TEMPLATE = r"""
@@ -40,13 +106,12 @@ _TEMPLATE = r"""
   * { box-sizing:border-box; }
   body { margin:0; background:transparent; font-family:var(--font-body); color:var(--ink); }
 
-  .wrap { display:grid; grid-template-columns: minmax(0,1.7fr) minmax(250px,1fr);
-          gap:var(--s-5); align-items:start; }
-  @media (max-width:820px){ .wrap{ grid-template-columns:1fr; } }
+  /* Stacked layout: voice selector on top, full-width video below. */
+  .wrap { display:flex; flex-direction:column; gap:var(--s-4); }
 
   .stage { position:relative; border-radius:var(--r-lg); overflow:hidden; background:#000;
            border:1px solid var(--line); box-shadow:var(--shadow-2); }
-  .stage video { width:100%; max-height:520px; display:block; background:#000; }
+  .stage video { width:100%; max-height:560px; display:block; background:#000; }
 
   /* YouTube-style subtitle: boxed line, bottom center, only while a cue
      is active. The voice chip floats top-left so the subtitle stays clean. */
@@ -63,12 +128,12 @@ _TEMPLATE = r"""
            color:#fff; background:rgba(0,0,0,.55); padding:5px 11px;
            border-radius:999px; pointer-events:none; }
 
-  .side h4 { font-family:var(--font-display); font-weight:400; font-size:var(--text-h3);
-             color:var(--ink); margin:2px 0 14px; }
-  .pick { display:flex; flex-direction:column; gap:10px; }
-  .pick button { display:flex; align-items:center; gap:11px; text-align:left; cursor:pointer;
-                 width:100%; font-weight:500; font-size:.96rem; color:var(--ink);
-                 padding:14px 16px; border-radius:var(--r-md); border:1px solid var(--line);
+  /* Horizontal voice selector row above the video (equal-width pills). */
+  .pick { display:flex; flex-direction:row; flex-wrap:wrap; gap:10px; }
+  .pick button { flex:1 1 0; min-width:150px; display:flex; align-items:center;
+                 justify-content:center; gap:9px; cursor:pointer;
+                 font-weight:600; font-size:.92rem; color:var(--ink);
+                 padding:12px 14px; border-radius:var(--r-md); border:1px solid var(--line);
                  background:var(--surface); font-family:var(--font-body);
                  transition: border-color var(--t-fast) var(--ease),
                              background var(--t-fast) var(--ease); }
@@ -78,23 +143,21 @@ _TEMPLATE = r"""
   .pick button.active .nm { color:var(--vc); }
   .pick button .dot { width:9px; height:9px; border-radius:50%; flex:none;
                       background:var(--vc); }
-  .hint { color:var(--ink-3); font-size:.78rem; font-style:italic; margin-top:14px; }
+  .hint { color:var(--ink-3); font-size:.78rem; font-style:italic;
+          text-align:center; margin:0; }
   @media (prefers-reduced-motion: reduce) {
     * { animation:none !important; transition:none !important; }
   }
 </style>
 
 <div class="wrap">
+  <div class="pick" id="pick"></div>
   <div class="stage">
     <video src="__SRC__" controls autoplay muted loop playsinline></video>
     <div class="voice" id="lab"></div>
     <div class="cap"><div class="txt" id="txt"></div></div>
   </div>
-  <div class="side">
-    <h4>Choose a voice</h4>
-    <div class="pick" id="pick"></div>
-    <div class="hint">Captions appear as the clip plays — switch voices anytime.</div>
-  </div>
+  <div class="hint">Captions appear as the clip plays — switch voices anytime.</div>
 </div>
 
 <script>
@@ -105,31 +168,44 @@ _TEMPLATE = r"""
   var video = document.querySelector('video');
 
   // --- Subtitle cues -------------------------------------------------- //
-  // The engine writes one caption per voice for the whole clip; to read
-  // like YouTube subtitles it is segmented into cues sized for ~3s each
-  // (never fewer than 4 words per cue) and spread across the duration.
-  var cues = null;   // null -> no timing available, show full text statically
+  // Each caption arrives already split (server-side) into readable phrase
+  // chunks of ~6-12 words. Here we spread those chunks across the clip's
+  // duration, keeping each on screen for at least MIN_CUE seconds so they
+  // stay readable. If the clip is too short to fit every chunk at that pace,
+  // adjacent chunks are merged (a very short clip just shows whole sentences).
+  var MIN_CUE = 2.0;   // seconds — minimum time a chunk stays on screen
+  var cues = null;     // null -> no timing available, show full text statically
 
-  function buildCues(caption){
+  function buildCues(chunks, fullCaption){
     var dur = video.duration;
-    var words = caption.split(/\s+/).filter(Boolean);
-    if (!isFinite(dur) || dur <= 0 || words.length === 0) {
+    if (!isFinite(dur) || dur <= 0 || !chunks || chunks.length === 0) {
       cues = null;
-      txt.textContent = caption;   // graceful fallback: static caption
+      txt.textContent = fullCaption || '';   // graceful static fallback
       return;
     }
-    var target = Math.max(1, Math.round(dur / 3));          // ~3s per cue
-    var n = Math.min(target, Math.ceil(words.length / 4));  // >=4 words each
-    var per = Math.ceil(words.length / n);
-    var parts = [];
-    for (var i = 0; i < words.length; i += per) {
-      parts.push(words.slice(i, i + per).join(' '));
-    }
+    var parts = chunks.slice();
+    var maxN = Math.max(1, Math.floor(dur / MIN_CUE));  // cues that fit at >=2s
+    if (parts.length > maxN) { parts = mergeToCount(parts, maxN); }
     var span = dur / parts.length;
     cues = parts.map(function(p, i){
       return { start: i * span, end: (i + 1) * span, text: p };
     });
     tick();
+  }
+
+  // Merge adjacent chunks (shortest pair first) until only `target` remain.
+  function mergeToCount(parts, target){
+    var out = parts.slice();
+    while (out.length > target) {
+      var bestI = 0, bestLen = Infinity;
+      for (var i = 0; i < out.length - 1; i++) {
+        var len = out[i].length + out[i + 1].length;
+        if (len < bestLen) { bestLen = len; bestI = i; }
+      }
+      out[bestI] = out[bestI] + ' ' + out[bestI + 1];
+      out.splice(bestI + 1, 1);
+    }
+    return out;
   }
 
   function tick(){
@@ -152,7 +228,7 @@ _TEMPLATE = r"""
     current = i;
     var d = DATA[i];
     lab.textContent = d.title;
-    buildCues(d.caption);
+    buildCues(d.chunks, d.caption);
     Array.prototype.forEach.call(pick.children, function(b, idx){
       b.classList.toggle('active', idx === i);
     });
@@ -183,7 +259,7 @@ def render_captioned_player(
     mime: str,
     captions: dict[str, str],
     styles: list[dict],
-    height: int = 600,
+    height: int = 700,
 ) -> None:
     """Render the video with a client-side switchable caption overlay."""
     src = f"data:{mime or 'video/mp4'};base64,{base64.b64encode(video_bytes).decode('ascii')}"
@@ -193,6 +269,7 @@ def render_captioned_player(
             "title": s["title"],
             "accent": s["accent"],
             "caption": captions.get(s["key"], ""),
+            "chunks": split_caption_for_display(captions.get(s["key"], "")),
         }
         for s in styles
     ]
