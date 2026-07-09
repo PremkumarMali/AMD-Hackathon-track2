@@ -11,3 +11,7 @@ frames/
 .env
 .env.*
 !.env.example
+
+# Firebase service-account credentials — never commit real values
+firebase-service-account.json
+*.firebase-service-account.json
