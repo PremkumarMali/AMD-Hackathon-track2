@@ -1,9 +1,11 @@
 [theme]
-primaryColor = "#b45309"
-backgroundColor = "#f7f3ec"
-secondaryBackgroundColor = "#fffdf8"
-textColor = "#1c1815"
-font = "serif"
+# Values mirror components/theme.py — keep the two in sync.
+base = "dark"
+primaryColor = "#d99e57"
+backgroundColor = "#0e0b06"
+secondaryBackgroundColor = "#17110a"
+textColor = "#f1e9d7"
+font = "sans serif"
 
 [server]
 maxUploadSize = 200

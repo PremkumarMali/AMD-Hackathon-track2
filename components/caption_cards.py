@@ -12,38 +12,41 @@ import streamlit as st
 from utils.helpers import esc
 
 # The four required caption styles. Order here == order on screen.
+# Accents are calibrated for the dark theme (components/theme.py): similar
+# luminance, low saturation, so no single voice outshouts the bronze brand
+# accent. They mark identity (dots, labels, hairlines) — never large fills.
 STYLES: list[dict] = [
     {
         "key": "formal",
         "title": "Formal",
         "emoji": "📝",
         "blurb": "Clear, professional, to the point.",
-        "accent": "#3b5b8c",  # dusty navy
-        "soft": "rgba(59,91,140,0.10)",
+        "accent": "#93aed6",  # dusty slate blue
+        "soft": "rgba(147,174,214,0.13)",
     },
     {
         "key": "sarcastic",
         "title": "Sarcastic",
         "emoji": "😏",
         "blurb": "Dry wit with a raised eyebrow.",
-        "accent": "#7c4d70",  # muted plum
-        "soft": "rgba(124,77,112,0.10)",
+        "accent": "#c79cc0",  # muted plum
+        "soft": "rgba(199,156,192,0.13)",
     },
     {
         "key": "humorous_tech",
         "title": "Humorous · Tech",
         "emoji": "🤓",
         "blurb": "Jokes for people who read stack traces.",
-        "accent": "#2f6d5f",  # deep teal
-        "soft": "rgba(47,109,95,0.10)",
+        "accent": "#8ec4ae",  # sage teal
+        "soft": "rgba(142,196,174,0.13)",
     },
     {
         "key": "humorous_non_tech",
         "title": "Humorous · Non-Tech",
         "emoji": "😂",
         "blurb": "Light, relatable, everybody laughs.",
-        "accent": "#b45309",  # burnt amber (brand accent)
-        "soft": "rgba(180,83,9,0.10)",
+        "accent": "#d99e57",  # bronze (brand accent)
+        "soft": "rgba(217,158,87,0.13)",
     },
 ]
 
