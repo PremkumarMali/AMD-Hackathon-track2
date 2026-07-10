@@ -139,16 +139,16 @@ def inject_css() -> None:
         /* ---- Stat cards ---- */
         .vc-stats {{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr));
             gap:var(--s-4); margin: var(--s-5) 0 var(--s-2); }}
-        .vc-stat {{ display:flex; flex-direction:column; gap:5px;
+        .vc-stat {{ display:flex; flex-direction:column; gap:7px;
             background:var(--surface); border:1px solid var(--line);
-            border-radius:var(--r-lg); padding:18px 20px 16px; box-shadow:var(--shadow-1);
+            border-radius:var(--r-lg); padding:20px 22px 18px; box-shadow:var(--shadow-1);
             transition: border-color var(--t-fast) var(--ease); }}
         .vc-stat:hover {{ border-color:var(--line-2); }}
-        .vc-stat .lab {{ font-size:var(--text-label); font-weight:600;
-            letter-spacing:.18em; text-transform:uppercase; color:var(--ink-3); }}
+        .vc-stat .lab {{ font-size:.8rem; font-weight:600;
+            letter-spacing:.16em; text-transform:uppercase; color:var(--ink); }}
         .vc-stat .val {{ font-family:var(--font-display); font-size:var(--text-stat);
             line-height:1.15; color:var(--ink); }}
-        .vc-stat .note {{ font-size:var(--text-caption); color:var(--ink-3); }}
+        .vc-stat .note {{ font-size:.95rem; color:var(--ink); }}
 
         @media (max-width: 980px) {{
             .vc-pagehead {{ grid-template-columns:1fr; align-items:start; gap:var(--s-4); }}
@@ -166,8 +166,10 @@ def inject_css() -> None:
         .vc-step .n {{ width:30px; height:30px; border-radius:50%; display:grid; place-items:center;
             font-family:var(--font-display); font-size:.95rem; color:var(--accent);
             border:1px solid var(--accent); background:transparent; }}
+        /* .t is an <h2>; margin/line-height reset the browser default. */
         .vc-step .t {{ font-family:var(--font-display); font-weight:400;
-            font-size:var(--text-h2); color:var(--ink); letter-spacing:.005em; }}
+            font-size:var(--text-h2); color:var(--ink); letter-spacing:.005em;
+            margin:0; line-height:1.1; }}
 
         /* ---- File uploader restyle ---- */
         [data-testid="stFileUploader"] section {{

@@ -91,9 +91,11 @@ def footer(text: str) -> None:
 def section(marker: str, title: str, meta: str | None = None) -> None:
     """Numbered section header; optional right-aligned meta note."""
     meta_html = f'<span class="m">{esc(meta)}</span>' if meta else ""
+    # Real <h2> so the page has a screen-reader heading outline under the
+    # page's single <h1>; .vc-step .t styling resets the default h2 margin.
     _html(
         f'<div class="vc-step"><span class="n">{esc(marker)}</span>'
-        f'<span class="t">{esc(title)}</span>{meta_html}</div>'
+        f'<h2 class="t">{esc(title)}</h2>{meta_html}</div>'
     )
 
 

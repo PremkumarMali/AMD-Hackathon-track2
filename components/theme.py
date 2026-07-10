@@ -42,7 +42,7 @@ TOKENS: dict[str, str] = {
     "font-body": "-apple-system,system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
     "text-display": "clamp(2.6rem, 5vw, 4.2rem)",
     "text-h1":      "clamp(1.9rem, 3vw, 2.6rem)",   # dashboard page titles
-    "text-stat":    "1.9rem",                        # stat-card values
+    "text-stat":    "2.4rem",                        # stat-card values
     "text-h2":      "1.45rem",
     "text-h3":      "1.2rem",
     "text-body":    "0.95rem",

@@ -106,17 +106,24 @@ _TEMPLATE = r"""
   * { box-sizing:border-box; }
   body { margin:0; background:transparent; font-family:var(--font-body); color:var(--ink); }
 
-  /* Stacked layout: voice selector on top, full-width video below. */
-  .wrap { display:flex; flex-direction:column; gap:var(--s-4); }
+  /* Stacked: voice picker on top, video full-width below. */
+  .wrap { display:flex; flex-direction:column; gap:var(--s-5); }
 
   .stage { position:relative; border-radius:var(--r-lg); overflow:hidden; background:#000;
            border:1px solid var(--line); box-shadow:var(--shadow-2); }
-  .stage video { width:100%; max-height:560px; display:block; background:#000; }
+  .stage video { width:100%; max-height:560px; display:block; background:#000;
+                 object-fit:contain; }
 
   /* YouTube-style subtitle: boxed line, bottom center, only while a cue
      is active. The voice chip floats top-left so the subtitle stays clean. */
   .cap { position:absolute; left:0; right:0; bottom:20px; display:flex;
-         justify-content:center; padding:0 24px; pointer-events:none; }
+         justify-content:center; padding:0 24px; pointer-events:none;
+         /* Bespoke travel motion: slower + gentle ease-in-out on both
+            directions so the lift/settle feels smooth, not snappy. */
+         transition: bottom 480ms cubic-bezier(.4, 0, .2, 1); }
+  /* Lift the subtitle clear of the native control bar while it is showing,
+     then settle back to the base position when the controls auto-hide. */
+  .stage.controls .cap { bottom:58px; }
   .cap .txt { display:inline-block; max-width:86%; text-align:center;
               background:rgba(0,0,0,.72); color:#fff; padding:7px 14px 8px;
               border-radius:8px; font-family:var(--font-body);
@@ -128,13 +135,21 @@ _TEMPLATE = r"""
            color:#fff; background:rgba(0,0,0,.55); padding:5px 11px;
            border-radius:999px; pointer-events:none; }
 
-  /* Horizontal voice selector row above the video (equal-width pills). */
-  .pick { display:flex; flex-direction:row; flex-wrap:wrap; gap:10px; }
-  .pick button { flex:1 1 0; min-width:150px; display:flex; align-items:center;
-                 justify-content:center; gap:9px; cursor:pointer;
-                 font-weight:600; font-size:.92rem; color:var(--ink);
-                 padding:12px 14px; border-radius:var(--r-md); border:1px solid var(--line);
-                 background:var(--surface); font-family:var(--font-body);
+  /* Picker header: title left, hint right on one baseline. */
+  .pickhead { display:flex; align-items:baseline; justify-content:space-between;
+              gap:var(--s-4); flex-wrap:wrap; margin-bottom:var(--s-3); }
+  .pickhead h4 { font-family:var(--font-display); font-weight:400;
+                 font-size:var(--text-h3); color:var(--ink); margin:0; }
+  .hint { color:var(--ink-3); font-size:.78rem; font-style:italic; }
+
+  /* Voice picker as a horizontal segmented row above the video. */
+  .pick { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
+  @media (max-width:720px){ .pick { grid-template-columns:repeat(2, 1fr); } }
+  @media (max-width:430px){ .pick { grid-template-columns:1fr; } }
+  .pick button { display:flex; align-items:center; justify-content:center; gap:10px;
+                 cursor:pointer; font-weight:500; font-size:.92rem; color:var(--ink);
+                 padding:13px 14px; border-radius:var(--r-md); border:1px solid var(--line);
+                 background:var(--surface); font-family:var(--font-body); white-space:nowrap;
                  transition: border-color var(--t-fast) var(--ease),
                              background var(--t-fast) var(--ease); }
   .pick button:hover { border-color:var(--line-2); background:var(--surface-2); }
@@ -143,21 +158,24 @@ _TEMPLATE = r"""
   .pick button.active .nm { color:var(--vc); }
   .pick button .dot { width:9px; height:9px; border-radius:50%; flex:none;
                       background:var(--vc); }
-  .hint { color:var(--ink-3); font-size:.78rem; font-style:italic;
-          text-align:center; margin:0; }
   @media (prefers-reduced-motion: reduce) {
     * { animation:none !important; transition:none !important; }
   }
 </style>
 
 <div class="wrap">
-  <div class="pick" id="pick"></div>
+  <div class="side">
+    <div class="pickhead">
+      <h4>Choose a voice</h4>
+      <span class="hint">Captions appear as the clip plays — switch anytime.</span>
+    </div>
+    <div class="pick" id="pick"></div>
+  </div>
   <div class="stage">
     <video src="__SRC__" controls autoplay muted loop playsinline></video>
     <div class="voice" id="lab"></div>
     <div class="cap"><div class="txt" id="txt"></div></div>
   </div>
-  <div class="hint">Captions appear as the clip plays — switch voices anytime.</div>
 </div>
 
 <script>
@@ -166,6 +184,31 @@ _TEMPLATE = r"""
   var txt = document.getElementById('txt');
   var pick = document.getElementById('pick');
   var video = document.querySelector('video');
+  var stage = document.querySelector('.stage');
+
+  // --- Control-bar awareness ------------------------------------------ //
+  // The browser draws its native control bar (scrubber, time) at the very
+  // bottom, over the subtitle. There is no event for "controls shown", so
+  // we mirror the browser's own logic: show on mouse activity or pause,
+  // and auto-hide after a short idle while playing. A CSS class lifts the
+  // caption in step, then it settles back down.
+  var idle;
+  function showControls(){
+    stage.classList.add('controls');
+    clearTimeout(idle);
+    if (!video.paused) idle = setTimeout(hideControls, 2600);
+  }
+  function hideControls(){
+    if (!video.paused) stage.classList.remove('controls');
+  }
+  stage.addEventListener('mousemove', showControls);
+  stage.addEventListener('touchstart', showControls, {passive:true});  // touch devices
+  stage.addEventListener('mouseleave', function(){
+    clearTimeout(idle);
+    if (!video.paused) stage.classList.remove('controls');
+  });
+  video.addEventListener('pause', showControls);   // controls stay up when paused
+  video.addEventListener('play', showControls);    // brief show, then idle-hide
 
   // --- Subtitle cues -------------------------------------------------- //
   // Each caption arrives already split (server-side) into readable phrase
@@ -230,7 +273,9 @@ _TEMPLATE = r"""
     lab.textContent = d.title;
     buildCues(d.chunks, d.caption);
     Array.prototype.forEach.call(pick.children, function(b, idx){
-      b.classList.toggle('active', idx === i);
+      var on = idx === i;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');  // toggle state for AT
     });
   }
 
@@ -239,6 +284,8 @@ _TEMPLATE = r"""
 
   DATA.forEach(function(d, i){
     var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');  // reflects active voice; set in render()
     b.style.setProperty('--vc', d.accent);  // voice color; CSS handles states
     var dot = document.createElement('span');
     dot.className = 'dot';
@@ -250,6 +297,20 @@ _TEMPLATE = r"""
     pick.appendChild(b);
   });
   render(0);
+
+  // --- Fit the iframe to content -------------------------------------- //
+  // Streamlit gives the component a fixed height; the stacked layout (picker
+  // row + full-width video) is taller and varies with the clip's aspect
+  // ratio. The iframe is same-origin (srcdoc), so size it to its content
+  // and keep it in sync as the video's dimensions settle.
+  function fit(){
+    if (window.frameElement) {
+      window.frameElement.style.height = (document.documentElement.scrollHeight + 2) + 'px';
+    }
+  }
+  new ResizeObserver(fit).observe(document.body);
+  window.addEventListener('load', fit);
+  video.addEventListener('loadedmetadata', fit);
 </script>
 """
 
@@ -259,9 +320,13 @@ def render_captioned_player(
     mime: str,
     captions: dict[str, str],
     styles: list[dict],
-    height: int = 700,
+    height: int = 740,
 ) -> None:
-    """Render the video with a client-side switchable caption overlay."""
+    """Render the video with a client-side switchable caption overlay.
+
+    ``height`` is only the initial iframe height; a script inside the
+    component resizes the iframe to fit the stacked layout once it loads.
+    """
     src = f"data:{mime or 'video/mp4'};base64,{base64.b64encode(video_bytes).decode('ascii')}"
     data = [
         {
