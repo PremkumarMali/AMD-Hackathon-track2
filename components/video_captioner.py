@@ -109,7 +109,7 @@ _TEMPLATE = r"""
   /* Stacked: voice picker on top, video full-width below. */
   .wrap { display:flex; flex-direction:column; gap:var(--s-5); }
 
-  .stage { position:relative; border-radius:var(--r-lg); overflow:hidden; background:#000;
+  .stage { position:relative; border-radius:var(--r-xl); overflow:hidden; background:#000;
            border:1px solid var(--line); box-shadow:var(--shadow-2); }
   .stage video { width:100%; max-height:560px; display:block; background:#000;
                  object-fit:contain; }
@@ -142,20 +142,24 @@ _TEMPLATE = r"""
                  font-size:var(--text-h3); color:var(--ink); margin:0; }
   .hint { color:var(--ink-3); font-size:.78rem; font-style:italic; }
 
-  /* Voice picker as a horizontal segmented row above the video. */
-  .pick { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
+  /* Voice picker as floating pills above the video. */
+  .pick { display:grid; grid-template-columns:repeat(4, 1fr); gap:11px; }
   @media (max-width:720px){ .pick { grid-template-columns:repeat(2, 1fr); } }
   @media (max-width:430px){ .pick { grid-template-columns:1fr; } }
   .pick button { display:flex; align-items:center; justify-content:center; gap:10px;
-                 cursor:pointer; font-weight:500; font-size:.92rem; color:var(--ink);
-                 padding:13px 14px; border-radius:var(--r-md); border:1px solid var(--line);
-                 background:var(--surface); font-family:var(--font-body); white-space:nowrap;
+                 cursor:pointer; font-weight:600; font-size:.92rem; color:var(--ink);
+                 padding:13px 16px; border-radius:999px; border:1px solid var(--line);
+                 background:var(--surface-2); font-family:var(--font-body); white-space:nowrap;
                  transition: border-color var(--t-fast) var(--ease),
-                             background var(--t-fast) var(--ease); }
-  .pick button:hover { border-color:var(--line-2); background:var(--surface-2); }
-  .pick button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  .pick button.active { border-color:var(--vc); background:var(--surface-2); }
-  .pick button.active .nm { color:var(--vc); }
+                             background var(--t-fast) var(--ease),
+                             box-shadow var(--t-fast) var(--ease),
+                             transform var(--t-fast) var(--ease); }
+  .pick button:hover { border-color:var(--line-2); transform:translateY(-2px); }
+  .pick button:focus-visible { outline:2px solid var(--accent-2); outline-offset:2px; }
+  /* Selected voice glows with amber lighting (brand), keeps its identity dot. */
+  .pick button.active { border-color:transparent; background:var(--accent-soft);
+                        box-shadow:var(--glow); }
+  .pick button.active .nm { color:var(--accent-2); }
   .pick button .dot { width:9px; height:9px; border-radius:50%; flex:none;
                       background:var(--vc); }
   @media (prefers-reduced-motion: reduce) {
@@ -305,12 +309,17 @@ _TEMPLATE = r"""
   // and keep it in sync as the video's dimensions settle.
   function fit(){
     if (window.frameElement) {
-      window.frameElement.style.height = (document.documentElement.scrollHeight + 2) + 'px';
+      // Size the iframe tightly to the stacked content so there is no
+      // reserved empty space beneath the player.
+      window.frameElement.style.height = Math.ceil(document.body.scrollHeight) + 'px';
     }
   }
   new ResizeObserver(fit).observe(document.body);
   window.addEventListener('load', fit);
   video.addEventListener('loadedmetadata', fit);
+  video.addEventListener('canplay', fit);
+  // A couple of delayed passes catch late layout (fonts, controls, metadata).
+  setTimeout(fit, 250); setTimeout(fit, 900);
 </script>
 """
 
@@ -320,7 +329,7 @@ def render_captioned_player(
     mime: str,
     captions: dict[str, str],
     styles: list[dict],
-    height: int = 740,
+    height: int = 520,
 ) -> None:
     """Render the video with a client-side switchable caption overlay.
 

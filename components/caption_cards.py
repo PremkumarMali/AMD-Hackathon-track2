@@ -45,8 +45,8 @@ STYLES: list[dict] = [
         "title": "Humorous · Non-Tech",
         "emoji": "😂",
         "blurb": "Light, relatable, everybody laughs.",
-        "accent": "#d99e57",  # bronze (brand accent)
-        "soft": "rgba(217,158,87,0.13)",
+        "accent": "#D4A15A",  # amber (brand accent)
+        "soft": "rgba(212,161,90,0.14)",
     },
 ]
 
@@ -71,8 +71,26 @@ def render_caption_card(style: dict, caption: str) -> None:
 
 
 def render_caption_grid(captions: dict[str, str]) -> None:
-    """Lay the four cards out in a single full-width row (4 across)."""
-    cols = st.columns(4, gap="medium")
-    for col, style in zip(cols, STYLES):
-        with col:
-            render_caption_card(style, captions.get(style["key"], "—"))
+    """Render the four captions as a responsive card grid (auto-fit: 2-up on
+    wide columns, 1-up when narrow) in a single markdown block, so it lays out
+    cleanly below the player. All dynamic text is HTML-escaped.
+    """
+    # Single concatenated string (no indentation): st.markdown parses its
+    # input as Markdown, where a 4+ space indent becomes a literal code block.
+    cards = ""
+    for style in STYLES:
+        tag = (
+            style["title"].split(" · ")[-1] if "·" in style["title"] else style["title"]
+        )
+        cards += (
+            f'<div class="vc-card" style="--accent:{style["accent"]};--soft:{style["soft"]};">'
+            f'<span class="vc-tag">{esc(tag)}</span>'
+            '<div class="head">'
+            f'<span class="ic">{style["emoji"]}</span>'
+            f'<span class="name">{esc(style["title"])}</span>'
+            "</div>"
+            f'<div class="blurb">{esc(style["blurb"])}</div>'
+            f'<div class="body">{esc(captions.get(style["key"], "—"))}</div>'
+            "</div>"
+        )
+    st.markdown(f'<div class="vc-caps">{cards}</div>', unsafe_allow_html=True)

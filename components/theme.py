@@ -10,42 +10,54 @@ stylesheets consume these tokens:
 Change a value here and the whole product follows. Never hardcode a hex
 value or a pixel size in component CSS — reference the CSS variable.
 
-The palette is a warm luxury-dark system: espresso blacks, one bronze
-accent, warm off-white text. Contrast pairs are WCAG AA:
-ink/bg ≈ 14:1 · ink-2/surface ≈ 7:1 · accent/bg ≈ 8:1.
+The palette is a warm luxury-dark system: black-walnut + matte-black
+grounds, one soft amber accent, warm off-white text. Contrast pairs are
+WCAG AA: ink/bg ≈ 15:1 · ink-2/surface ≈ 6:1 · accent/bg ≈ 8:1.
 """
 
 from __future__ import annotations
 
 TOKENS: dict[str, str] = {
     # ---- Color ----------------------------------------------------------- #
-    "bg":         "#0e0b06",   # canvas — deep espresso black
-    "surface":    "#17110a",   # cards, inputs
-    "surface-2":  "#221a10",   # raised / hover surfaces
-    "line":       "#332a1e",   # resting hairline borders
-    "line-2":     "#4d3f2a",   # interactive / hover borders
-    "ink":        "#f1e9d7",   # primary text — warm white
-    "ink-2":      "#b0a288",   # secondary text — muted beige
-    "ink-3":      "#877a5e",   # tertiary text — metadata only
-    "accent":     "#d99e57",   # bronze — the single accent
-    "accent-2":   "#e8b26b",   # accent hover / emphasis
-    "on-accent":  "#1d1204",   # text set on accent fills
-    "ok":         "#a8bf90",   # success — warm sage
-    "err":        "#d99180",   # error — warm terracotta
+    "bg":         "#090806",   # canvas — matte black-walnut
+    "panel":      "#13100D",   # mid-layer panels / deep wells
+    "surface":    "#1B1713",   # cards, inputs
+    "surface-2":  "#241D16",   # raised / hover surfaces
+    "line":       "rgba(255,255,255,.08)",   # resting hairline borders
+    "line-2":     "rgba(255,255,255,.15)",   # interactive / hover borders
+    "ink":        "#F5F2EC",   # primary text — warm white
+    "ink-2":      "#9A948A",   # secondary text — muted stone
+    "ink-3":      "#6E685E",   # tertiary text — metadata only
+    "accent":     "#D4A15A",   # amber — the single accent
+    "accent-2":   "#F3C77D",   # amber highlight / emphasis
+    "on-accent":  "#241706",   # text set on accent fills
+    "ok":         "#6ECF8E",   # success — warm green
+    "err":        "#E0937E",   # error — warm terracotta
+
+    # ---- Glass / glow (subtle depth) ------------------------------------- #
+    "glass-bg":   "rgba(27,23,19,.62)",       # frosted card fill
+    "glass-line": "rgba(255,255,255,.10)",    # frosted card border
+    "blur":       "blur(18px) saturate(1.25)",
+    "glow":       "0 0 0 1px rgba(212,161,90,.32), 0 10px 40px rgba(212,161,90,.16)",
+    "accent-soft":"rgba(212,161,90,.12)",     # tint fills for icon chips
+    "accent-line":"rgba(212,161,90,.28)",     # amber hairline
 
     # ---- Elevation ------------------------------------------------------- #
-    "shadow-1":   "0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.25)",
-    "shadow-2":   "0 2px 4px rgba(0,0,0,.4), 0 18px 50px rgba(0,0,0,.45)",
+    "shadow-1":   "0 1px 2px rgba(0,0,0,.4), 0 12px 34px rgba(0,0,0,.34)",
+    "shadow-2":   "0 2px 6px rgba(0,0,0,.5), 0 28px 70px rgba(0,0,0,.5)",
 
     # ---- Typography ------------------------------------------------------ #
-    "font-display": "'Mortane','Playfair Display',Georgia,'Times New Roman',serif",
+    # Display: elegant editorial serif (Cormorant/Playfair feel via system
+    # serifs, since no webfont is fetched — see load_brand_font_css).
+    "font-display": "'Mortane','Cormorant Garamond','Playfair Display',"
+                    "'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif",
     "font-body": "-apple-system,system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
-    "text-display": "clamp(2.6rem, 5vw, 4.2rem)",
-    "text-h1":      "clamp(1.9rem, 3vw, 2.6rem)",   # dashboard page titles
-    "text-stat":    "2.4rem",                        # stat-card values
-    "text-h2":      "1.45rem",
-    "text-h3":      "1.2rem",
-    "text-body":    "0.95rem",
+    "text-display": "clamp(2.8rem, 5.4vw, 4.4rem)",
+    "text-h1":      "clamp(2.2rem, 3.4vw, 3.1rem)",   # dashboard page titles
+    "text-stat":    "2.5rem",                          # stat-card values
+    "text-h2":      "1.5rem",
+    "text-h3":      "1.22rem",
+    "text-body":    "0.97rem",
     "text-caption": "0.82rem",
     "text-label":   "0.68rem",   # always 600 weight, uppercase, tracked
 
@@ -59,15 +71,15 @@ TOKENS: dict[str, str] = {
     "s-7": "48px",
     "s-8": "64px",
 
-    # ---- Radius ---------------------------------------------------------- #
-    "r-sm": "8px",
-    "r-md": "12px",
-    "r-lg": "16px",
-    "r-xl": "20px",
+    # ---- Radius (premium 20–28px on the big surfaces) -------------------- #
+    "r-sm": "12px",
+    "r-md": "16px",
+    "r-lg": "20px",
+    "r-xl": "26px",
 
     # ---- Motion ---------------------------------------------------------- #
     "t-fast": "150ms",
-    "t-base": "200ms",
+    "t-base": "220ms",
     "ease":   "cubic-bezier(.33,.9,.35,1)",
 }
 
