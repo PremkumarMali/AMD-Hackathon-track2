@@ -1,10 +1,14 @@
-"""Mock / rule-based caption generator.
+"""Mock / rule-based caption generator (offline fallback).
 
 Turns a ``video_context`` dict (see ``video_utils.build_video_context``) into
-four captions — one per voice defined in ``style_rules``. There is no model
-and no network call: the output is templated so the demo runs fully offline
-and deterministically (the same clip always yields the same captions, while
-different clips vary).
+four captions — one per voice defined in ``style_rules``. There is no model and
+no network call, so the demo still works when Fireworks/Gemma is unavailable.
+
+The mock has no real understanding of the footage, so its captions are kept
+deliberately generic and content-neutral. Crucially, they NEVER mention the
+filename, clip name, file extension, frame counts, or "key frames" — a fallback
+caption should read like a caption, not like a file report. Output is
+deterministic (same clip → same captions) so the demo is stable.
 
 Public API:
     generate_mock_captions(video_context) -> dict[str, str]
@@ -18,12 +22,12 @@ from .style_rules import STYLE_KEYS
 
 
 def generate_mock_captions(video_context: dict) -> dict[str, str]:
-    """Return one caption per style for the given video context.
+    """Return one clean, content-neutral caption per style.
 
     Args:
-        video_context: The dict produced by ``build_video_context`` (needs at
-            least ``clip_name``/``filename``, ``num_frames_extracted`` and
-            ``duration_label``).
+        video_context: The dict produced by ``build_video_context``. Only
+            coarse, non-identifying metadata is used (duration presence) — never
+            the filename, clip name, or frame count.
 
     Returns:
         ``{"formal": ..., "sarcastic": ..., "humorous_tech": ...,
@@ -34,27 +38,93 @@ def generate_mock_captions(video_context: dict) -> dict[str, str]:
             "video_context must be a dict from build_video_context()."
         )
 
-    name = _clip_label(video_context)
-    nframes = int(video_context.get("num_frames_extracted") or 0)
-    dur_label = video_context.get("duration_label") or "unknown"
+    dur_label = video_context.get("duration_label") or ""
     has_dur = dur_label not in (None, "", "unknown")
-    seed = (
-        video_context.get("clip_name")
-        or video_context.get("filename")
-        or "clip"
-    )
 
-    pools = _build_pools(name, nframes, dur_label, has_dur)
+    # Deterministic-but-varied: seed on coarse metadata (duration/resolution/
+    # frame count) so different clips get different picks and the same clip is
+    # stable — WITHOUT ever putting the filename into a caption.
+    seed = "|".join(
+        str(video_context.get(k) or "")
+        for k in ("duration_seconds", "resolution", "frame_count")
+    ) or "clip"
+
+    pools = _build_pools(has_dur)
     return {key: _pick(pools[key], f"{key}:{seed}") for key in STYLE_KEYS}
 
 
-def _clip_label(context: dict) -> str:
-    """A tidy, human phrase for the clip — its cleaned name or 'your clip'."""
-    raw = (context.get("clip_name") or "").strip()
-    cleaned = raw.replace("_", " ").replace("-", " ").strip()
-    if not cleaned or len(cleaned) > 40:
-        return "your clip"
-    return f"“{cleaned}”"  # curly-quoted, e.g. “beach day”
+def generate_mock_segment_captions(
+    index: int, count: int, has_dur: bool = True
+) -> dict[str, str]:
+    """Clean generic captions for ONE timeline segment (offline fallback).
+
+    Used when Fireworks is disabled or fails: each segment gets safe, generic
+    captions that hint at their position in the clip (opening / middle /
+    closing) so the timed overlay still progresses — but NEVER mention the
+    filename, clip name, frame counts, or "key frames".
+
+    Args:
+        index: 0-based segment index.
+        count: total number of segments.
+        has_dur: unused flag kept for signature symmetry with the global mock.
+
+    Returns:
+        ``{formal, sarcastic, humorous_tech, humorous_non_tech}``.
+    """
+    lead = _position_lead(index, count)
+    pools = _segment_pools(lead)
+    seed = f"seg:{index}:{count}"
+    return {key: _pick(pools[key], f"{key}:{seed}") for key in STYLE_KEYS}
+
+
+def _position_lead(index: int, count: int) -> str:
+    """A short, generic phrase describing where in the clip a segment sits."""
+    if count <= 1:
+        return ""
+    if index == 0:
+        return "Early on, "
+    if index >= count - 1:
+        return "Toward the end, "
+    return "As the clip continues, "
+
+
+def _cap(lead: str, body: str) -> str:
+    """Join a position lead and a body, capitalising when there is no lead."""
+    if not lead:
+        return body[0].upper() + body[1:]
+    return lead + body
+
+
+def _segment_pools(lead: str) -> dict[str, list[str]]:
+    """Clean, generic per-segment caption options (no filename/frame wording)."""
+    formal = [
+        "the video shows a scene with visible movement and changing on-screen "
+        "elements.",
+        "the footage presents an unfolding scene with steady on-screen activity.",
+        "the clip follows a scene as it shifts and develops on screen.",
+    ]
+    sarcastic = [
+        "a lot is clearly happening, even if the details are playing it cool.",
+        "the scene is fully committed to keeping everyone guessing.",
+        "it is riveting stuff, assuming the bar for riveting is set right here.",
+    ]
+    humorous_tech = [
+        "the scene renders cleanly and the caption engine stays comfortably "
+        "online.",
+        "zero crashes, stable runtime, just footage doing its thing on screen.",
+        "the visuals compile without errors, so this part ships straight to prod.",
+    ]
+    humorous_non_tech = [
+        "something is clearly going on, and it has got real personality.",
+        "the scene shows up ready to entertain and does not sit quietly.",
+        "whatever is happening here, it is putting on a little show.",
+    ]
+    return {
+        "formal": [_cap(lead, b) for b in formal],
+        "sarcastic": [_cap(lead, b) for b in sarcastic],
+        "humorous_tech": [_cap(lead, b) for b in humorous_tech],
+        "humorous_non_tech": [_cap(lead, b) for b in humorous_non_tech],
+    }
 
 
 def _pick(options: list[str], seed_text: str) -> str:
@@ -68,76 +138,63 @@ def _pick(options: list[str], seed_text: str) -> str:
     return options[int(digest, 16) % len(options)]
 
 
-def _build_pools(
-    name: str,
-    nframes: int,
-    dur_label: str,
-    has_dur: bool,
-) -> dict[str, list[str]]:
-    """Assemble the candidate captions for each style.
+def _build_pools(has_dur: bool) -> dict[str, list[str]]:
+    """Assemble clean, content-neutral captions for each style.
 
-    Templates weave in the clip name and frame count (always known); a few
-    duration-flavoured extras are added only when the duration is measurable,
-    so captions never reference an unknown length.
+    None of these reference the filename, clip name, file extension, frame
+    count, "key frames", "sampled frames", "reviewed across", "record of", or
+    "uploaded clip" — they describe a generic on-screen scene so the offline
+    fallback still reads like a real caption.
     """
     formal = [
-        f"A clear, professional record of {name}. Reviewed across {nframes} "
-        f"key frames, it documents its subject and their actions in a "
-        f"straightforward, easy-to-follow sequence.",
-        f"This video presents a concise, self-contained sequence of events. "
-        f"Its main subject and their actions are captured plainly and "
-        f"accurately across {nframes} sampled frames.",
-        f"An organised visual summary of {name}. The footage unfolds in a "
-        f"logical order and is well suited to a general audience.",
+        "The video shows a scene with visible movement and changing on-screen "
+        "elements.",
+        "A short clip that follows an unfolding scene as it shifts and develops "
+        "on screen.",
+        "The footage presents a scene with steady on-screen activity from start "
+        "to finish.",
     ]
     sarcastic = [
-        f"Oh, {name}? Groundbreaking. Truly the kind of footage that changes "
-        f"lives — all captured in a breezy {nframes} frames of pure, "
-        f"unmatched drama.",
-        f"Stop the presses: {name} has arrived. Someone alert the Academy, "
-        f"because this is clearly the cinematic event of the century.",
-        f"Wow, {nframes} whole key frames and I'm still on the edge of my "
-        f"seat — said absolutely no one. But here we are, captioning it "
-        f"anyway.",
+        "A lot is clearly happening here, even if the details are playing it "
+        "cool.",
+        "Riveting stuff — the scene is fully committed to keeping everyone "
+        "guessing.",
+        "Truly edge-of-your-seat material, assuming the seat is pulled right up "
+        "to the screen.",
     ]
     humorous_tech = [
-        f"This clip runs in O(fun) time with zero memory leaks. I sampled "
-        f"{nframes} frames and every one passed code review — ship it to "
-        f"prod. On a Friday. No tests.",
-        f"Ran {name} through the pipeline: {nframes} frames extracted, 0 "
-        f"exceptions thrown, 100% vibes coverage. The build is green and so "
-        f"am I with envy.",
-        f"POV: your video compiles on the first try. {nframes} frames, no "
-        f"null pointers, no merge conflicts — just clean footage and "
-        f"good energy.",
+        "Scene rendered, pixels streaming, and the caption engine is still very "
+        "much online.",
+        "The visuals compiled without a single error, so this scene is shipping "
+        "straight to prod.",
+        "Runtime looks stable, zero crashes — just clean footage doing its "
+        "thing on screen.",
     ]
     humorous_non_tech = [
-        f"Plot twist: nobody expected {name} to be this entertaining. Grab "
-        f"some popcorn — these {nframes} snapshots are doing the "
-        f"absolute most.",
-        f"Somewhere between frame one and frame {nframes}, this clip decided "
-        f"it was the main character. Honestly? Iconic behaviour.",
-        f"They said it was just a short video. They were wrong. {name} is a "
-        f"whole mood, and we're all better for having watched it.",
+        "Something is definitely happening on screen, and honestly, it has got "
+        "personality.",
+        "The scene showed up ready to entertain, and it did not come to sit "
+        "quietly in the corner.",
+        "Whatever is going on here, it is putting on a show and we are all here "
+        "for it.",
     ]
 
     if has_dur:
         formal.append(
-            f"Running about {dur_label}, {name} delivers a clear and orderly "
-            f"account of its subject, reviewed here through {nframes} "
-            f"representative frames."
+            "Over its brief runtime, the video follows a scene as it moves and "
+            "changes on screen."
         )
         sarcastic.append(
-            f"A full {dur_label} of content and somehow every second counts "
-            f"— allegedly. Bravo, {name}. Bravo."
+            "A whole runtime of pure, understated drama — blink and you might "
+            "miss the plot entirely."
         )
         humorous_tech.append(
-            f"{dur_label} of runtime, {nframes} frames buffered, zero lag. "
-            f"This clip has better uptime than most of my side projects."
+            "Low latency, high vibes: the scene plays back smoother than most of "
+            "my side projects."
         )
         humorous_non_tech.append(
-            f"{dur_label} very well spent. {name} packs more personality into "
-            f"that runtime than most people manage before their morning coffee."
+            "A short watch that somehow packs in more character than it has any "
+            "right to."
         )
 
     return {
