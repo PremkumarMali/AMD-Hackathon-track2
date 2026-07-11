@@ -91,8 +91,5 @@ def build_video_context(
             if meta["width"] and meta["height"]
             else None
         ),
-        "scene_description": (
-            "The uploaded video was processed into key frames for "
-            "caption generation."
-        ),
+        "scene_description": "A short video clip.",
     }

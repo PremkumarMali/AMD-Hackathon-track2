@@ -105,9 +105,21 @@ def generate_fireworks_captions(context, frame_paths, api_key, model=None, timeo
     description = generate_scene_description(
         context, frame_paths, api_key, vision_model, timeout
     )
-    return generate_styled_captions_from_description(
+    captions = generate_styled_captions_from_description(
         description, api_key, text_model, timeout
     )
+    # Reject captions that leak the filename, frame counts, or "processed/
+    # reviewed" wording; try once more, then let the caller fall back to mock.
+    if _captions_reference_forbidden(captions, context):
+        _log("captions referenced filename/frames -> regenerating once")
+        captions = generate_styled_captions_from_description(
+            description, api_key, text_model, timeout
+        )
+        if _captions_reference_forbidden(captions, context):
+            raise FireworksError(
+                "Captions referenced the filename or frame wording; rejected."
+            )
+    return captions
 
 
 def generate_scene_description(context, frame_paths, api_key, vision_model, timeout=60):
@@ -251,16 +263,22 @@ def _encode_frames(frame_paths):
 # --------------------------------------------------------------------------- #
 
 def _build_vision_messages(context, data_uris):
-    """Call 1 prompt: a short plain-English scene description (no JSON)."""
-    duration = context.get("duration_label") or "unknown"
-    nframes = context.get("num_frames_extracted") or len(data_uris)
+    """Call 1 prompt: a short plain-English scene description (no JSON).
+
+    The filename is deliberately NOT included, and the model is told to describe
+    only the visible content — no titles, file names, or frame-count talk.
+    """
     instruction = (
-        f"These are {len(data_uris)} still frames sampled from a short video "
-        f"(about {duration} long, {nframes} key frames total). In 2 to 4 short "
-        "sentences of plain English, describe only what is visibly happening: "
-        "the scene, the main subject or objects, colours, and any action or "
-        "motion. Do not write captions, do not use JSON or markdown, and do not "
-        "include any reasoning — just the description."
+        "These are still images taken from a short video clip. In 2 to 4 short "
+        "sentences of plain English, describe ONLY what is actually visible in "
+        "the images: the setting or scene, the main subjects or objects, any "
+        "on-screen text, UI, or game elements, the actions or motion taking "
+        "place, colours, and the overall mood. "
+        "Do NOT guess or invent a title, file name, or clip name. "
+        "Do NOT mention frames, frame counts, samples, or that these are stills "
+        "from a video. "
+        "Do not write captions, JSON, markdown, or any reasoning — output only "
+        "the plain description of the scene."
     )
     content = [{"type": "text", "text": instruction}]
     content += [{"type": "image_url", "image_url": {"url": uri}} for uri in data_uris]
@@ -268,7 +286,7 @@ def _build_vision_messages(context, data_uris):
         {
             "role": "system",
             "content": "You describe images accurately and concisely in plain "
-                       "English.",
+                       "English, based only on what is visible.",
         },
         {"role": "user", "content": content},
     ]
@@ -277,18 +295,24 @@ def _build_vision_messages(context, data_uris):
 def _build_caption_messages(description):
     """Call 2 prompt: turn the description into the four styled captions (JSON)."""
     instruction = (
-        "Here is a description of a short video:\n\n"
+        "Here is a description of what is visible in a short video:\n\n"
         f"{description}\n\n"
-        "Based on this description, write a REAL caption for the video in each of "
-        "four styles. Return a JSON object with exactly four keys: formal, "
-        "sarcastic, humorous_tech, humorous_non_tech.\n\n"
+        "Based ONLY on this description, write a REAL caption for the video in "
+        "each of four styles. Return a JSON object with exactly four keys: "
+        "formal, sarcastic, humorous_tech, humorous_non_tech.\n\n"
         "Style guide:\n"
         "- formal: professional and neutral.\n"
         "- sarcastic: witty with light sarcasm, not offensive.\n"
         "- humorous_tech: funny, with programming / AI / tech-style humor.\n"
         "- humorous_non_tech: funny but understandable without any tech terms.\n\n"
-        "Each caption must be a complete sentence specific to the described "
-        'video. Do not use placeholder text such as "..." or "caption here". '
+        "Rules for every caption:\n"
+        "- Describe the visible content from the description; be specific to it.\n"
+        "- Each caption must be a single complete sentence.\n"
+        "- Do NOT mention any file name, clip name, title, or file extension "
+        "(e.g. .mp4).\n"
+        "- Do NOT mention frames, key frames, samples, or that the video was "
+        "processed, reviewed, or recorded.\n"
+        '- Do not use placeholder text such as "..." or "caption here".\n'
         "Return only the JSON object with no extra text."
     )
     return [
@@ -441,6 +465,42 @@ def _has_valid_captions(d):
     return True
 
 
+# Wording a good content caption must never contain: filename/frame artefacts.
+_FORBIDDEN_SUBSTRINGS = (
+    "key frame", "keyframe", "sampled frame", "reviewed across", "record of",
+    "uploaded clip", "uploaded video", "processed into", "file name",
+    "filename", ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v",
+)
+
+
+def _clip_stem(context):
+    """The filename stem normalised to spaces/lowercase (for echo detection)."""
+    raw = (context.get("clip_name") or "").strip().lower()
+    return re.sub(r"[\s_\-]+", " ", raw).strip()
+
+
+def _caption_references_forbidden(text, stem):
+    """True if a caption echoes the filename or uses banned frame/file wording."""
+    low = text.lower()
+    if any(bad in low for bad in _FORBIDDEN_SUBSTRINGS):
+        return True
+    # Only flag the filename stem if it is distinctive enough to be an echo
+    # (short/common stems would cause false positives).
+    if stem and len(stem) >= 5 and stem in low:
+        return True
+    return False
+
+
+def _captions_reference_forbidden(captions, context):
+    """True if any of the four captions leaks the filename or frame wording."""
+    stem = _clip_stem(context)
+    return any(
+        _caption_references_forbidden(v, stem)
+        for v in captions.values()
+        if isinstance(v, str)
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Safe logging (never emits key, headers, base64, full response, or reasoning)
 # --------------------------------------------------------------------------- #
@@ -461,3 +521,8 @@ def _emit_failure_debug(message):
 def _safe_snippet(text, limit=200):
     """A short, single-line slice of an HTTP error body for diagnostics."""
     return (text or "").replace("\n", " ")[:limit]
+
+
+def _log(message):
+    """Safe stderr debug line — never emits key, headers, base64, or reasoning."""
+    print(f"[fireworks] {message}", file=sys.stderr, flush=True)

@@ -136,12 +136,38 @@ def run_smoke():
     except FileNotFoundError as e:
         print(f"   OK: raised FileNotFoundError -> {_ascii(e)}")
 
-    print("\n== 9. Different filename -> different captions ==")
-    ctx_b = build_video_context(video_path, frames, original_name="quarterly_report.mp4")
-    caps_b = generate_mock_captions(ctx_b)
-    differ = sum(1 for k in STYLE_KEYS if caps_b[k] != caps[k])
-    print(f"   {differ}/4 styles differ from the first clip")
-    assert differ > 0, "different clips should not produce identical captions"
+    print("\n== 9. Captions are content-based, not filename-based ==")
+    # (a) Captions must never leak the filename, extension, or frame wording.
+    banned = [
+        "beach day", "beach_day", ".mp4", "key frame", "sampled frame",
+        "reviewed across", "record of", "uploaded clip",
+    ]
+    for k in STYLE_KEYS:
+        low = caps[k].lower()
+        leaked = [b for b in banned if b in low]
+        assert not leaked, f"caption [{k}] leaked {leaked}: {_ascii(caps[k])}"
+    print("   OK: no filename / extension / frame wording in captions")
+
+    # (b) Renaming the SAME clip must not change captions (filename-independent).
+    ctx_renamed = build_video_context(
+        video_path, frames, original_name="quarterly_report.mp4"
+    )
+    assert generate_mock_captions(ctx_renamed) == caps, (
+        "captions must not depend on the filename"
+    )
+    print("   OK: renaming the clip does not change its captions")
+
+    # (c) A genuinely different clip (different content/metadata) varies captions.
+    video_path2 = os.path.join(tmpdir, "clip2.mp4")
+    make_test_video(video_path2, seconds=6, fps=30, size=(640, 480))
+    frames2 = extract_key_frames(
+        video_path2, output_dir=os.path.join(tmpdir, "frames2"), max_frames=8
+    )
+    ctx2 = build_video_context(video_path2, frames2, original_name="clip2.mp4")
+    caps2 = generate_mock_captions(ctx2)
+    differ = sum(1 for k in STYLE_KEYS if caps2[k] != caps[k])
+    print(f"   {differ}/4 styles differ for a different-content clip")
+    assert caps2 != caps, "a different-content clip should vary the captions"
 
     print("\nALL CHECKS PASSED")
 
